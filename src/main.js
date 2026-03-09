@@ -26,7 +26,8 @@ const WRONG_STORAGE_KEY = "quiz_wrong_questions";
 function normalizeQuestions(rawQuestions) {
   return rawQuestions
     .filter((item) => {
-      const hasQuestion = typeof item.question === "string" && item.question.trim();
+      const hasQuestion =
+        typeof item.question === "string" && item.question.trim();
       const hasOptions = Array.isArray(item.options) && item.options.length > 1;
       const hasAnswers = Array.isArray(item.answer) && item.answer.length > 0;
       return hasQuestion && hasOptions && hasAnswers;
@@ -37,7 +38,8 @@ function normalizeQuestions(rawQuestions) {
       question: item.question.trim(),
       options: item.options.map((option) => String(option).trim()),
       answer: item.answer.map((value) => Number(value)).sort((a, b) => a - b),
-      answer_type: item.answer_type || (item.answer.length > 1 ? "複選" : "單選"),
+      answer_type:
+        item.answer_type || (item.answer.length > 1 ? "複選" : "單選"),
     }));
 }
 
@@ -58,7 +60,7 @@ function filteredQuestions() {
     state.selectedCategories.length === 0
       ? [...state.allQuestions]
       : state.allQuestions.filter((question) =>
-          state.selectedCategories.includes(question.type || "未分類"),
+          state.selectedCategories.includes(question.type || "未分類")
         );
 
   if (state.playMode !== "wrong") {
@@ -150,7 +152,7 @@ function loadWrongQuestionIds() {
 function persistWrongQuestionIds() {
   window.localStorage.setItem(
     WRONG_STORAGE_KEY,
-    JSON.stringify(state.wrongQuestionIds),
+    JSON.stringify(state.wrongQuestionIds)
   );
 }
 
@@ -162,7 +164,9 @@ function rememberWrongQuestion(questionId) {
 
 function forgetWrongQuestion(questionId) {
   if (!state.wrongQuestionIds.includes(questionId)) return;
-  state.wrongQuestionIds = state.wrongQuestionIds.filter((id) => id !== questionId);
+  state.wrongQuestionIds = state.wrongQuestionIds.filter(
+    (id) => id !== questionId
+  );
   persistWrongQuestionIds();
 }
 
@@ -303,7 +307,9 @@ function renderHome() {
   const total = state.questions.length;
   const wrongCount = state.wrongQuestionIds.length;
   const filtersMarkup = `
-    <label class="filter-row ${state.selectedCategories.length === 0 ? "is-active" : ""}">
+    <label class="filter-row ${
+      state.selectedCategories.length === 0 ? "is-active" : ""
+    }">
       <input
         type="checkbox"
         data-action="filter"
@@ -316,7 +322,9 @@ function renderHome() {
     ${categories()
       .map(
         (category) => `
-          <label class="filter-row ${state.selectedCategories.includes(category) ? "is-active" : ""}">
+          <label class="filter-row ${
+            state.selectedCategories.includes(category) ? "is-active" : ""
+          }">
             <input
               type="checkbox"
               data-action="filter"
@@ -326,7 +334,7 @@ function renderHome() {
             <span class="filter-box"></span>
             <span class="filter-label">${escapeHtml(category)}</span>
           </label>
-        `,
+        `
       )
       .join("")}
   `;
@@ -340,18 +348,26 @@ function renderHome() {
         <p class="eyebrow">Mobile Quiz Game</p>
         <div class="top-utility">
           <button
-            class="btn btn-ghost btn-compact ${state.playMode === "wrong" ? "is-mode-active" : ""}"
+            class="btn btn-ghost btn-compact ${
+              state.playMode === "wrong" ? "is-mode-active" : ""
+            }"
             data-action="toggle-wrong-mode"
             ${wrongCount === 0 && state.playMode !== "wrong" ? "disabled" : ""}
           >
-            ${state.playMode === "wrong" ? "目前：歷史錯題" : `歷史錯題 ${wrongCount} 題`}
+            ${
+              state.playMode === "wrong"
+                ? "目前：歷史錯題"
+                : `歷史錯題 ${wrongCount} 題`
+            }
           </button>
           ${
             state.playMode === "wrong"
               ? `<button class="btn btn-ghost btn-compact" data-action="set-mode" data-mode="all">回全部題庫</button>`
               : ""
           }
-          <button class="btn btn-ghost btn-compact" data-action="clear-wrong" ${wrongCount === 0 ? "disabled" : ""}>清空錯題</button>
+          <button class="btn btn-ghost btn-compact" data-action="clear-wrong" ${
+            wrongCount === 0 ? "disabled" : ""
+          }>清空錯題</button>
         </div>
         <h1>題庫練習站</h1>
         <p class="hero-copy">
@@ -361,17 +377,25 @@ function renderHome() {
         <section class="filter-panel ${visibleClass}">
           <div class="filter-head">
             <strong>題目分類</strong>
-            <span>${escapeHtml(modeLabel())} · ${escapeHtml(selectedCategorySummary())} · ${total} 題</span>
+            <span>${escapeHtml(modeLabel())} · ${escapeHtml(
+              selectedCategorySummary()
+            )} · ${total} 題</span>
           </div>
           <div class="filter-toolbar">
             <button class="btn btn-ghost btn-compact" data-action="toggle-filter-panel">${toggleLabel}</button>
-            <button class="btn btn-ghost btn-compact" data-action="clear-filters" ${state.selectedCategories.length === 0 ? "disabled" : ""}>清空選項</button>
+            <button class="btn btn-ghost btn-compact" data-action="clear-filters" ${
+              state.selectedCategories.length === 0 ? "disabled" : ""
+            }>清空選項</button>
           </div>
           <div class="filter-list" role="group" aria-label="題目分類篩選">${filtersMarkup}</div>
         </section>
         <div class="hero-actions">
-          <button class="btn btn-primary" data-action="start" ${state.loading || total === 0 ? "disabled" : ""}>開始作答</button>
-          <button class="btn btn-secondary" data-action="shuffle" ${state.loading || total === 0 ? "disabled" : ""}>重新抽題</button>
+          <button class="btn btn-primary" data-action="start" ${
+            state.loading || total === 0 ? "disabled" : ""
+          }>開始作答</button>
+          <button class="btn btn-secondary" data-action="shuffle" ${
+            state.loading || total === 0 ? "disabled" : ""
+          }>重新抽題</button>
         </div>
         <p class="status-text">
           ${
@@ -391,7 +415,12 @@ function renderResult() {
   const total = state.questions.length;
   const wrongCount = state.wrongQuestionIds.length;
   const accuracy =
-    total === 0 ? 0 : Math.round((state.correctCount / (state.correctCount + state.wrongCount || 1)) * 100);
+    total === 0
+      ? 0
+      : Math.round(
+          (state.correctCount / (state.correctCount + state.wrongCount || 1)) *
+            100
+        );
 
   app.innerHTML = `
     <main class="shell ${state.returningHome ? "is-returning" : ""}">
@@ -440,13 +469,23 @@ function renderQuiz() {
 
   const optionsMarkup = question.options
     .map((option, index) => {
-      const lines = option.split("\n").map((line) => line.trim()).filter(Boolean);
-      const labelClass = lines.length > 1 ? "option-text bilingual" : "option-text";
+      const lines = option
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+      const labelClass =
+        lines.length > 1 ? "option-text bilingual" : "option-text";
       const isSelected = state.selectedAnswers.includes(index);
       const isCorrect = correctAnswers.includes(index);
       const showCorrect = state.submitted && isCorrect;
       const showWrong = state.submitted && isSelected && !isCorrect;
-      const stateClass = showCorrect ? "is-correct" : showWrong ? "is-wrong" : isSelected ? "is-selected" : "";
+      const stateClass = showCorrect
+        ? "is-correct"
+        : showWrong
+          ? "is-wrong"
+          : isSelected
+            ? "is-selected"
+            : "";
       const badge = index + 1;
 
       return `
@@ -454,7 +493,12 @@ function renderQuiz() {
           <span class="option-badge">${badge}</span>
           <span class="${labelClass}">
             ${lines
-              .map((line, lineIndex) => `<span class="${lineIndex === 0 ? "option-zh" : "option-en"}">${escapeHtml(line)}</span>`)
+              .map(
+                (line, lineIndex) =>
+                  `<span class="${
+                    lineIndex === 0 ? "option-zh" : "option-en"
+                  }">${escapeHtml(line)}</span>`
+              )
               .join("")}
           </span>
         </button>
@@ -501,12 +545,18 @@ function renderQuiz() {
         </section>
 
         <footer class="action-bar">
-          <button class="btn btn-ghost" data-action="home" ${state.returningHome ? "disabled" : ""}>回到首頁</button>
+          <button class="btn btn-ghost" data-action="home" ${
+            state.returningHome ? "disabled" : ""
+          }>回到首頁</button>
           <button class="btn btn-secondary" data-action="restart">重來</button>
           ${
             state.submitted
-              ? `<button class="btn btn-primary" data-action="next">${progress === total ? "看結果" : "下一題"}</button>`
-              : `<button class="btn btn-primary" data-action="submit" ${state.selectedAnswers.length === 0 ? "disabled" : ""}>送出答案</button>`
+              ? `<button class="btn btn-primary" data-action="next">${
+                  progress === total ? "看結果" : "下一題"
+                }</button>`
+              : `<button class="btn btn-primary" data-action="submit" ${
+                  state.selectedAnswers.length === 0 ? "disabled" : ""
+                }>送出答案</button>`
           }
         </footer>
       </section>
@@ -531,7 +581,7 @@ function render() {
 async function loadQuestions() {
   try {
     state.wrongQuestionIds = loadWrongQuestionIds();
-    const response = await fetch("/data_table.json");
+    const response = await fetch(`${import.meta.env.BASE_URL}data_table.json`);
     if (!response.ok) {
       throw new Error(`題庫載入失敗（${response.status}）`);
     }
