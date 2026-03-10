@@ -18,6 +18,7 @@ const state = {
   filterExpanded: true,
   wrongQuestionIds: [],
   playMode: "all",
+  questionLimit: "all",
 };
 
 const app = document.querySelector("#app");
@@ -80,6 +81,42 @@ function shuffleQuestions(questions) {
     .map((question) => ({ question, random: Math.random() }))
     .sort((a, b) => a.random - b.random)
     .map((entry) => entry.question);
+}
+
+function questionLimitSteps(total) {
+  if (total <= 0) return [];
+  if (total <= 5) return [total];
+
+  const steps = [];
+  for (let value = 5; value < total; value += 5) {
+    steps.push(value);
+  }
+
+  if (steps[steps.length - 1] !== total) {
+    steps.push(total);
+  }
+
+  return steps;
+}
+
+function effectiveQuestionLimit(total) {
+  if (state.questionLimit === "all") {
+    return total;
+  }
+
+  return Math.min(state.questionLimit, total);
+}
+
+function currentQuestionLimitValue(total) {
+  const steps = questionLimitSteps(total);
+  if (steps.length === 0) return 0;
+  if (state.questionLimit === "all") return steps[steps.length - 1];
+  if (steps.includes(state.questionLimit)) return state.questionLimit;
+
+  return (
+    steps.find((value) => value >= state.questionLimit) ??
+    steps[steps.length - 1]
+  );
 }
 
 function resetRunState() {
@@ -183,6 +220,21 @@ function setPlayMode(mode) {
   syncFilteredQuestions();
 }
 
+function changeQuestionLimit(direction) {
+  const total = state.questions.length;
+  const steps = questionLimitSteps(total);
+  if (steps.length === 0) return;
+
+  const current = currentQuestionLimitValue(total);
+  const currentIndex = Math.max(steps.indexOf(current), 0);
+  const nextIndex =
+    direction === "increase"
+      ? Math.min(currentIndex + 1, steps.length - 1)
+      : Math.max(currentIndex - 1, 0);
+
+  state.questionLimit = steps[nextIndex];
+}
+
 function selectedCategorySummary() {
   if (state.selectedCategories.length === 0) {
     return "全部";
@@ -257,7 +309,11 @@ function nextQuestion() {
 }
 
 function restartGame() {
-  const preparedQuestions = shuffleQuestions(filteredQuestions());
+  const availableQuestions = filteredQuestions();
+  const preparedQuestions = shuffleQuestions(availableQuestions).slice(
+    0,
+    effectiveQuestionLimit(availableQuestions.length)
+  );
   if (preparedQuestions.length === 0) return;
   state.questions = preparedQuestions;
   state.started = true;
@@ -306,6 +362,11 @@ function escapeHtml(value) {
 function renderHome() {
   const total = state.questions.length;
   const wrongCount = state.wrongQuestionIds.length;
+  const selectedLimit = currentQuestionLimitValue(total);
+  const limitSteps = questionLimitSteps(total);
+  const isMinLimit = limitSteps.length === 0 || selectedLimit === limitSteps[0];
+  const isMaxLimit =
+    limitSteps.length === 0 || selectedLimit === limitSteps[limitSteps.length - 1];
   const filtersMarkup = `
     <label class="filter-row ${
       state.selectedCategories.length === 0 ? "is-active" : ""
@@ -390,6 +451,24 @@ function renderHome() {
           <div class="filter-list" role="group" aria-label="題目分類篩選">${filtersMarkup}</div>
         </section>
         <div class="hero-actions">
+          <div class="question-limit-control">
+            <span>本次題數</span>
+            <div class="question-limit-stepper">
+              <button
+                class="stepper-btn"
+                data-action="decrease-question-limit"
+                ${state.loading || total === 0 || isMinLimit ? "disabled" : ""}
+                aria-label="減少題數"
+              >-</button>
+              <strong>${selectedLimit} 題</strong>
+              <button
+                class="stepper-btn"
+                data-action="increase-question-limit"
+                ${state.loading || total === 0 || isMaxLimit ? "disabled" : ""}
+                aria-label="增加題數"
+              >+</button>
+            </div>
+          </div>
           <button class="btn btn-primary" data-action="start" ${
             state.loading || total === 0 ? "disabled" : ""
           }>開始作答</button>
@@ -647,6 +726,12 @@ app.addEventListener("click", (event) => {
       restartGame();
     } else if (action === "home") {
       goHome();
+    } else if (action === "decrease-question-limit") {
+      changeQuestionLimit("decrease");
+      render();
+    } else if (action === "increase-question-limit") {
+      changeQuestionLimit("increase");
+      render();
     }
     return;
   }
