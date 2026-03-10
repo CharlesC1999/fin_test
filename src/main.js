@@ -18,7 +18,7 @@ const state = {
   filterExpanded: true,
   wrongQuestionIds: [],
   playMode: "all",
-  questionLimit: "all",
+  questionLimit: 20,
 };
 
 const app = document.querySelector("#app");
@@ -359,6 +359,18 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
+function questionLimitHint(total, selectedLimit) {
+  if (total <= 0) {
+    return "目前沒有可作答題目";
+  }
+
+  if (selectedLimit < state.questionLimit) {
+    return `此分類上限 ${selectedLimit} 題`;
+  }
+
+  return `目前設定 ${selectedLimit} 題`;
+}
+
 function renderHome() {
   const total = state.questions.length;
   const wrongCount = state.wrongQuestionIds.length;
@@ -468,13 +480,14 @@ function renderHome() {
                 aria-label="增加題數"
               >+</button>
             </div>
+            <small>${questionLimitHint(total, selectedLimit)}</small>
           </div>
           <button class="btn btn-primary" data-action="start" ${
             state.loading || total === 0 ? "disabled" : ""
           }>開始作答</button>
           <button class="btn btn-secondary" data-action="shuffle" ${
             state.loading || total === 0 ? "disabled" : ""
-          }>重新抽題</button>
+          }>重新抽選</button>
         </div>
         <p class="status-text">
           ${
