@@ -359,18 +359,6 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
-function questionLimitHint(total, selectedLimit) {
-  if (total <= 0) {
-    return "目前沒有可作答題目";
-  }
-
-  if (selectedLimit < state.questionLimit) {
-    return `此分類上限 ${selectedLimit} 題`;
-  }
-
-  return `目前設定 ${selectedLimit} 題`;
-}
-
 function renderHome() {
   const total = state.questions.length;
   const wrongCount = state.wrongQuestionIds.length;
@@ -378,7 +366,8 @@ function renderHome() {
   const limitSteps = questionLimitSteps(total);
   const isMinLimit = limitSteps.length === 0 || selectedLimit === limitSteps[0];
   const isMaxLimit =
-    limitSteps.length === 0 || selectedLimit === limitSteps[limitSteps.length - 1];
+    limitSteps.length === 0 ||
+    selectedLimit === limitSteps[limitSteps.length - 1];
   const filtersMarkup = `
     <label class="filter-row ${
       state.selectedCategories.length === 0 ? "is-active" : ""
@@ -472,7 +461,7 @@ function renderHome() {
                 ${state.loading || total === 0 || isMinLimit ? "disabled" : ""}
                 aria-label="減少題數"
               >-</button>
-              <strong>${selectedLimit} 題</strong>
+              <strong>${selectedLimit}</strong>
               <button
                 class="stepper-btn"
                 data-action="increase-question-limit"
@@ -480,7 +469,6 @@ function renderHome() {
                 aria-label="增加題數"
               >+</button>
             </div>
-            <small>${questionLimitHint(total, selectedLimit)}</small>
           </div>
           <button class="btn btn-primary" data-action="start" ${
             state.loading || total === 0 ? "disabled" : ""
