@@ -661,6 +661,7 @@ function render() {
 async function loadQuestions() {
   try {
     state.wrongQuestionIds = loadWrongQuestionIds();
+    // 這裡讀取題庫，並更新 state
     const response = await fetch(`${import.meta.env.BASE_URL}data_table.json`);
     if (!response.ok) {
       throw new Error(`題庫載入失敗（${response.status}）`);
