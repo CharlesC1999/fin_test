@@ -1,4 +1,24 @@
-import "./style.css";
+﻿import "./style.css";
+
+const DEFAULT_CATEGORY = "未分類";
+const ALL_CATEGORY = "全部";
+const WRONG_STORAGE_KEY = "quiz_wrong_questions";
+const PROGRESS_STORAGE_KEY = "quiz_progress";
+
+const QUESTION_SELECTION_MODES = {
+  all: {
+    label: "全部隨機",
+    helper: "平均分配各類別，已作答題目也會重新出現。",
+  },
+  preferUnanswered: {
+    label: "優先未作答",
+    helper: "先出沒做過的題目，不夠時才補已作答題目。",
+  },
+  unansweredOnly: {
+    label: "只出未作答",
+    helper: "只抽沒做過的題目，適合用來刷完整體進度。",
+  },
+};
 
 const state = {
   allQuestions: [],
@@ -19,10 +39,22 @@ const state = {
   wrongQuestionIds: [],
   playMode: "all",
   questionLimit: 20,
+  questionSelectionMode: "preferUnanswered",
+  progress: {
+    answeredQuestionIds: [],
+    categoryStats: {},
+  },
 };
 
 const app = document.querySelector("#app");
-const WRONG_STORAGE_KEY = "quiz_wrong_questions";
+
+function uniqueStringList(values) {
+  return [
+    ...new Set(
+      (Array.isArray(values) ? values : []).map((value) => String(value))
+    ),
+  ];
+}
 
 function normalizeQuestions(rawQuestions) {
   return rawQuestions
@@ -36,6 +68,8 @@ function normalizeQuestions(rawQuestions) {
     .map((item) => ({
       ...item,
       id: String(item.id),
+      type: String(item.type || DEFAULT_CATEGORY).trim() || DEFAULT_CATEGORY,
+      difficulty: String(item.difficulty || "未分類").trim() || "未分類",
       question: item.question.trim(),
       options: item.options.map((option) => String(option).trim()),
       answer: item.answer.map((value) => Number(value)).sort((a, b) => a - b),
@@ -48,12 +82,16 @@ function currentQuestion() {
   return state.questions[state.currentIndex];
 }
 
+function questionCategory(question) {
+  return question?.type || DEFAULT_CATEGORY;
+}
+
 function categories() {
   const items = new Set();
   state.allQuestions.forEach((question) => {
-    items.add(question.type || "未分類");
+    items.add(questionCategory(question));
   });
-  return [...items];
+  return [...items].sort((left, right) => left.localeCompare(right, "zh-Hant"));
 }
 
 function filteredQuestions() {
@@ -61,7 +99,7 @@ function filteredQuestions() {
     state.selectedCategories.length === 0
       ? [...state.allQuestions]
       : state.allQuestions.filter((question) =>
-          state.selectedCategories.includes(question.type || "未分類")
+          state.selectedCategories.includes(questionCategory(question))
         );
 
   if (state.playMode !== "wrong") {
@@ -81,6 +119,13 @@ function shuffleQuestions(questions) {
     .map((question) => ({ question, random: Math.random() }))
     .sort((a, b) => a.random - b.random)
     .map((entry) => entry.question);
+}
+
+function shuffleItems(items) {
+  return [...items]
+    .map((item) => ({ item, random: Math.random() }))
+    .sort((a, b) => a.random - b.random)
+    .map((entry) => entry.item);
 }
 
 function questionLimitSteps(total) {
@@ -156,7 +201,7 @@ function syncFilteredQuestions() {
 }
 
 function toggleCategory(category) {
-  if (category === "全部") {
+  if (category === ALL_CATEGORY) {
     state.selectedCategories = [];
     syncFilteredQuestions();
     return;
@@ -180,7 +225,7 @@ function loadWrongQuestionIds() {
     if (!saved) return [];
 
     const parsed = JSON.parse(saved);
-    return Array.isArray(parsed) ? parsed.map((value) => String(value)) : [];
+    return uniqueStringList(parsed);
   } catch {
     return [];
   }
@@ -190,6 +235,58 @@ function persistWrongQuestionIds() {
   window.localStorage.setItem(
     WRONG_STORAGE_KEY,
     JSON.stringify(state.wrongQuestionIds)
+  );
+}
+
+function emptyCategoryProgress() {
+  return {
+    answeredIds: [],
+    correctIds: [],
+    wrongIds: [],
+  };
+}
+
+function normalizeProgress(progress) {
+  const raw = typeof progress === "object" && progress !== null ? progress : {};
+  const rawCategoryStats =
+    typeof raw.categoryStats === "object" && raw.categoryStats !== null
+      ? raw.categoryStats
+      : {};
+
+  const categoryStats = Object.fromEntries(
+    Object.entries(rawCategoryStats).map(([category, stats]) => [
+      category,
+      {
+        answeredIds: uniqueStringList(stats?.answeredIds),
+        correctIds: uniqueStringList(stats?.correctIds),
+        wrongIds: uniqueStringList(stats?.wrongIds),
+      },
+    ])
+  );
+
+  return {
+    answeredQuestionIds: uniqueStringList(raw.answeredQuestionIds),
+    categoryStats,
+  };
+}
+
+function loadProgress() {
+  try {
+    const saved = window.localStorage.getItem(PROGRESS_STORAGE_KEY);
+    if (!saved) {
+      return normalizeProgress({});
+    }
+
+    return normalizeProgress(JSON.parse(saved));
+  } catch {
+    return normalizeProgress({});
+  }
+}
+
+function persistProgress() {
+  window.localStorage.setItem(
+    PROGRESS_STORAGE_KEY,
+    JSON.stringify(state.progress)
   );
 }
 
@@ -220,8 +317,32 @@ function setPlayMode(mode) {
   syncFilteredQuestions();
 }
 
+function setQuestionSelectionMode(mode) {
+  if (!QUESTION_SELECTION_MODES[mode]) return;
+  state.questionSelectionMode = mode;
+  if (!state.started) {
+    render();
+  }
+}
+
+function cycleQuestionSelectionMode() {
+  const modes = Object.keys(QUESTION_SELECTION_MODES);
+  const currentIndex = modes.indexOf(state.questionSelectionMode);
+  const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % modes.length : 0;
+  setQuestionSelectionMode(modes[nextIndex]);
+}
+
+function availableQuestionCountForMode(questions) {
+  if (state.questionSelectionMode !== "unansweredOnly") {
+    return questions.length;
+  }
+
+  const answeredIds = new Set(state.progress.answeredQuestionIds);
+  return questions.filter((question) => !answeredIds.has(question.id)).length;
+}
+
 function changeQuestionLimit(direction) {
-  const total = state.questions.length;
+  const total = availableQuestionCountForMode(filteredQuestions());
   const steps = questionLimitSteps(total);
   if (steps.length === 0) return;
 
@@ -237,7 +358,7 @@ function changeQuestionLimit(direction) {
 
 function selectedCategorySummary() {
   if (state.selectedCategories.length === 0) {
-    return "全部";
+    return ALL_CATEGORY;
   }
 
   if (state.selectedCategories.length === 1) {
@@ -249,6 +370,10 @@ function selectedCategorySummary() {
 
 function modeLabel() {
   return state.playMode === "wrong" ? "歷史錯題" : "全部題庫";
+}
+
+function selectionModeLabel() {
+  return QUESTION_SELECTION_MODES[state.questionSelectionMode].label;
 }
 
 function isMultiSelect(question) {
@@ -275,6 +400,42 @@ function arraysEqual(left, right) {
   return left.every((value, index) => value === right[index]);
 }
 
+function upsertId(list, value) {
+  return list.includes(value) ? list : [...list, value];
+}
+
+function removeId(list, value) {
+  return list.filter((item) => item !== value);
+}
+
+function recordQuestionResult(question, isCorrect) {
+  const questionId = question.id;
+  const category = questionCategory(question);
+  const categoryProgress =
+    state.progress.categoryStats[category] || emptyCategoryProgress();
+
+  state.progress = {
+    answeredQuestionIds: upsertId(
+      state.progress.answeredQuestionIds,
+      questionId
+    ),
+    categoryStats: {
+      ...state.progress.categoryStats,
+      [category]: {
+        answeredIds: upsertId(categoryProgress.answeredIds, questionId),
+        correctIds: isCorrect
+          ? upsertId(categoryProgress.correctIds, questionId)
+          : removeId(categoryProgress.correctIds, questionId),
+        wrongIds: isCorrect
+          ? removeId(categoryProgress.wrongIds, questionId)
+          : upsertId(categoryProgress.wrongIds, questionId),
+      },
+    },
+  };
+
+  persistProgress();
+}
+
 function submitAnswer() {
   if (state.submitted || state.selectedAnswers.length === 0) return;
 
@@ -283,6 +444,7 @@ function submitAnswer() {
   const isCorrect = arraysEqual(normalizedSelected, question.answer);
 
   state.submitted = true;
+  recordQuestionResult(question, isCorrect);
   if (isCorrect) {
     state.score += 10;
     state.correctCount += 1;
@@ -308,13 +470,94 @@ function nextQuestion() {
   render();
 }
 
-function restartGame() {
-  const availableQuestions = filteredQuestions();
-  const preparedQuestions = shuffleQuestions(availableQuestions).slice(
-    0,
-    effectiveQuestionLimit(availableQuestions.length)
+function buildCategoryBuckets(questions) {
+  const answeredIds = new Set(state.progress.answeredQuestionIds);
+  const groups = new Map();
+
+  questions.forEach((question) => {
+    const category = questionCategory(question);
+    const bucket = groups.get(category) || [];
+    bucket.push(question);
+    groups.set(category, bucket);
+  });
+
+  return [...groups.entries()].map(([category, items]) => {
+    const unanswered = shuffleQuestions(
+      items.filter((question) => !answeredIds.has(question.id))
+    );
+    const answered = shuffleQuestions(
+      items.filter((question) => answeredIds.has(question.id))
+    );
+
+    if (state.questionSelectionMode === "all") {
+      return {
+        category,
+        primary: shuffleQuestions(items),
+        secondary: [],
+      };
+    }
+
+    if (state.questionSelectionMode === "unansweredOnly") {
+      return {
+        category,
+        primary: unanswered,
+        secondary: [],
+      };
+    }
+
+    return {
+      category,
+      primary: unanswered,
+      secondary: answered,
+    };
+  });
+}
+
+function selectBalancedQuestions(questions) {
+  const buckets = buildCategoryBuckets(questions)
+    .map((bucket) => ({
+      ...bucket,
+      picked: 0,
+      totalAvailable: bucket.primary.length + bucket.secondary.length,
+    }))
+    .filter((bucket) => bucket.totalAvailable > 0);
+
+  const totalAvailable = buckets.reduce(
+    (sum, bucket) => sum + bucket.totalAvailable,
+    0
   );
+  const targetCount = effectiveQuestionLimit(totalAvailable);
+  const selected = [];
+
+  while (selected.length < targetCount) {
+    const roundBuckets = shuffleItems(buckets).sort(
+      (left, right) => left.picked - right.picked
+    );
+    let pickedAny = false;
+
+    roundBuckets.forEach((bucket) => {
+      if (selected.length >= targetCount) return;
+
+      const nextQuestion = bucket.primary.shift() || bucket.secondary.shift();
+      if (!nextQuestion) return;
+
+      bucket.picked += 1;
+      selected.push(nextQuestion);
+      pickedAny = true;
+    });
+
+    if (!pickedAny) {
+      break;
+    }
+  }
+
+  return shuffleQuestions(selected);
+}
+
+function restartGame() {
+  const preparedQuestions = selectBalancedQuestions(filteredQuestions());
   if (preparedQuestions.length === 0) return;
+
   state.questions = preparedQuestions;
   state.started = true;
   state.finished = false;
@@ -359,8 +602,51 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
+function categoryTotalsMap() {
+  return state.allQuestions.reduce((totals, question) => {
+    const category = questionCategory(question);
+    totals[category] = (totals[category] || 0) + 1;
+    return totals;
+  }, {});
+}
+
+function categoryProgress(category, totals) {
+  const stats =
+    state.progress.categoryStats[category] || emptyCategoryProgress();
+  const answeredCount = stats.answeredIds.length;
+  const correctCount = stats.correctIds.length;
+  const totalCount = totals[category] || 0;
+
+  return {
+    category,
+    totalCount,
+    answeredCount,
+    unansweredCount: Math.max(totalCount - answeredCount, 0),
+    progressPercent:
+      totalCount === 0 ? 0 : Math.round((answeredCount / totalCount) * 100),
+    accuracyPercent:
+      answeredCount === 0
+        ? 0
+        : Math.round((correctCount / answeredCount) * 100),
+  };
+}
+
+function overallProgressSummary() {
+  const answeredCount = state.progress.answeredQuestionIds.length;
+  const totalCount = state.allQuestions.length;
+
+  return {
+    answeredCount,
+    totalCount,
+    progressPercent:
+      totalCount === 0 ? 0 : Math.round((answeredCount / totalCount) * 100),
+  };
+}
+
 function renderHome() {
-  const total = state.questions.length;
+  const filteredPool = filteredQuestions();
+  const total = availableQuestionCountForMode(filteredPool);
+  const totalInCurrentView = filteredPool.length;
   const wrongCount = state.wrongQuestionIds.length;
   const selectedLimit = currentQuestionLimitValue(total);
   const limitSteps = questionLimitSteps(total);
@@ -368,25 +654,37 @@ function renderHome() {
   const isMaxLimit =
     limitSteps.length === 0 ||
     selectedLimit === limitSteps[limitSteps.length - 1];
+  const progressSummary = overallProgressSummary();
+  const categoryTotals = categoryTotalsMap();
+  const modeButtonLabel = `出題：${selectionModeLabel()}`;
+
   const filtersMarkup = `
-    <label class="filter-row ${
-      state.selectedCategories.length === 0 ? "is-active" : ""
-    }">
+    <label
+      class="filter-row ${
+        state.selectedCategories.length === 0 ? "is-active" : ""
+      }"
+      style="--category-progress: ${progressSummary.progressPercent}%"
+    >
       <input
         type="checkbox"
         data-action="filter"
-        data-category="全部"
+        data-category="${ALL_CATEGORY}"
         ${state.selectedCategories.length === 0 ? "checked" : ""}
       />
       <span class="filter-box"></span>
-      <span class="filter-label">全部</span>
+      <span class="filter-label">${ALL_CATEGORY}</span>
+      <span class="filter-meta">${progressSummary.progressPercent}%</span>
     </label>
     ${categories()
-      .map(
-        (category) => `
-          <label class="filter-row ${
-            state.selectedCategories.includes(category) ? "is-active" : ""
-          }">
+      .map((category) => {
+        const item = categoryProgress(category, categoryTotals);
+        return `
+          <label
+            class="filter-row ${
+              state.selectedCategories.includes(category) ? "is-active" : ""
+            }"
+            style="--category-progress: ${item.progressPercent}%"
+          >
             <input
               type="checkbox"
               data-action="filter"
@@ -395,14 +693,15 @@ function renderHome() {
             />
             <span class="filter-box"></span>
             <span class="filter-label">${escapeHtml(category)}</span>
+            <span class="filter-meta">${item.progressPercent}%</span>
           </label>
-        `
-      )
+        `;
+      })
       .join("")}
   `;
 
   const visibleClass = state.filterExpanded ? "is-expanded" : "is-collapsed";
-  const toggleLabel = state.filterExpanded ? "收起分類" : "展開分類";
+  const toggleLabel = state.filterExpanded ? "收合分類" : "展開分類";
 
   app.innerHTML = `
     <main class="shell">
@@ -424,30 +723,55 @@ function renderHome() {
           </button>
           ${
             state.playMode === "wrong"
-              ? `<button class="btn btn-ghost btn-compact" data-action="set-mode" data-mode="all">回全部題庫</button>`
+              ? '<button class="btn btn-ghost btn-compact" data-action="set-mode" data-mode="all">回全部題庫</button>'
               : ""
           }
           <button class="btn btn-ghost btn-compact" data-action="clear-wrong" ${
             wrongCount === 0 ? "disabled" : ""
           }>清空錯題</button>
+          <div class="mode-toggle" role="group" aria-label="出題模式切換">
+            ${Object.entries(QUESTION_SELECTION_MODES)
+              .map(
+                ([mode, config]) => `
+                  <button
+                    class="mode-toggle-btn ${
+                      state.questionSelectionMode === mode ? "is-active" : ""
+                    }"
+                    data-action="set-question-mode"
+                    data-question-mode="${mode}"
+                    aria-pressed="${
+                      state.questionSelectionMode === mode ? "true" : "false"
+                    }"
+                    title="${escapeHtml(config.label)}"
+                  >${escapeHtml(
+                    mode === "all"
+                      ? "全"
+                      : mode === "preferUnanswered"
+                        ? "優"
+                        : "未"
+                  )}</button>
+                `
+              )
+              .join("")}
+          </div>
         </div>
         <h1>題庫練習站</h1>
         <p class="hero-copy">
-          以手機操作為主，支援單選、複選、即時判斷與分數累計。現在題庫共有
-          <strong>${total}</strong> 題。
+          題目會依類別平均輪替出題。現在目前篩選範圍內可出 <strong>${total}</strong> 題，
+          題庫總覽為 ${totalInCurrentView} 題。
         </p>
         <section class="filter-panel ${visibleClass}">
           <div class="filter-head">
             <strong>題目分類</strong>
             <span>${escapeHtml(modeLabel())} · ${escapeHtml(
               selectedCategorySummary()
-            )} · ${total} 題</span>
+            )} · ${total} 題可出</span>
           </div>
           <div class="filter-toolbar">
             <button class="btn btn-ghost btn-compact" data-action="toggle-filter-panel">${toggleLabel}</button>
             <button class="btn btn-ghost btn-compact" data-action="clear-filters" ${
               state.selectedCategories.length === 0 ? "disabled" : ""
-            }>清空選項</button>
+            }>清除分類</button>
           </div>
           <div class="filter-list" role="group" aria-label="題目分類篩選">${filtersMarkup}</div>
         </section>
@@ -472,10 +796,10 @@ function renderHome() {
           </div>
           <button class="btn btn-primary" data-action="start" ${
             state.loading || total === 0 ? "disabled" : ""
-          }>開始作答</button>
+          }>開始</button>
           <button class="btn btn-secondary" data-action="shuffle" ${
             state.loading || total === 0 ? "disabled" : ""
-          }>重新抽選</button>
+          }>重抽</button>
         </div>
         <p class="status-text">
           ${
@@ -483,7 +807,13 @@ function renderHome() {
               ? "題庫載入中..."
               : state.error
                 ? escapeHtml(state.error)
-                : `題庫已就緒，可直接開始。歷史錯題 ${wrongCount} 題。`
+                : total === 0
+                  ? "目前條件下沒有可出的題目，請切換分類或改用其他出題模式。"
+                  : `已作答 ${progressSummary.answeredCount} / ${
+                      progressSummary.totalCount
+                    } 題（${
+                      progressSummary.progressPercent
+                    }%），目前模式為「${escapeHtml(selectionModeLabel())}」。`
           }
         </p>
       </section>
@@ -506,7 +836,7 @@ function renderResult() {
     <main class="shell ${state.returningHome ? "is-returning" : ""}">
       <section class="hero-card result-card">
         <p class="eyebrow">Completed</p>
-        <h1>本次作答完成</h1>
+        <h1>本次練習完成</h1>
         <div class="score-ring">
           <span>${state.score}</span>
           <small>分</small>
@@ -530,9 +860,9 @@ function renderResult() {
           </article>
         </div>
         <div class="hero-actions">
-          <button class="btn btn-ghost" data-action="home">回到首頁</button>
-          <button class="btn btn-primary" data-action="restart">重新挑戰</button>
-          <button class="btn btn-secondary" data-action="shuffle">重洗題目</button>
+          <button class="btn btn-ghost" data-action="home">回首頁</button>
+          <button class="btn btn-primary" data-action="restart">再做一次</button>
+          <button class="btn btn-secondary" data-action="shuffle">重抽題目</button>
         </div>
         <p class="status-text">歷史錯題累積：${wrongCount} 題</p>
       </section>
@@ -613,7 +943,7 @@ function renderQuiz() {
 
         <article class="question-panel">
           <div class="question-tags">
-            <span>${escapeHtml(question.type || "一般題")}</span>
+            <span>${escapeHtml(questionCategory(question))}</span>
             <span>${escapeHtml(question.difficulty || "未分類")}</span>
           </div>
           <h2>${escapeHtml(question.question).replaceAll("\n", "<br />")}</h2>
@@ -627,7 +957,7 @@ function renderQuiz() {
         <footer class="action-bar">
           <button class="btn btn-ghost" data-action="home" ${
             state.returningHome ? "disabled" : ""
-          }>回到首頁</button>
+          }>回首頁</button>
           <button class="btn btn-secondary" data-action="restart">重來</button>
           ${
             state.submitted
@@ -661,7 +991,8 @@ function render() {
 async function loadQuestions() {
   try {
     state.wrongQuestionIds = loadWrongQuestionIds();
-    // 這裡讀取題庫，並更新 state
+    state.progress = loadProgress();
+
     const response = await fetch(`${import.meta.env.BASE_URL}data_table.json`);
     if (!response.ok) {
       throw new Error(`題庫載入失敗（${response.status}）`);
@@ -692,7 +1023,7 @@ app.addEventListener("click", (event) => {
       shuffleGame();
     } else if (action === "filter") {
       const scrollState = captureHomeScrollState();
-      toggleCategory(actionTarget.dataset.category || "全部");
+      toggleCategory(actionTarget.dataset.category || ALL_CATEGORY);
       render();
       restoreHomeScrollState(scrollState);
     } else if (action === "toggle-filter-panel") {
@@ -718,6 +1049,13 @@ app.addEventListener("click", (event) => {
     } else if (action === "clear-wrong") {
       const scrollState = captureHomeScrollState();
       clearWrongQuestions();
+      render();
+      restoreHomeScrollState(scrollState);
+    } else if (action === "set-question-mode") {
+      const scrollState = captureHomeScrollState();
+      setQuestionSelectionMode(
+        actionTarget.dataset.questionMode || "preferUnanswered"
+      );
       render();
       restoreHomeScrollState(scrollState);
     } else if (action === "submit") {
