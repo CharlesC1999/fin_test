@@ -55,7 +55,7 @@
                 `).join("")}
           </div>
         </div>
-        <h1>題庫練習站</h1>
+        <h1 class="home-title">${o>25?"禎禎要複習":"禎禎我最棒"}</h1>
         <p class="hero-copy">
           題目會依類別平均輪替出題。現在目前篩選範圍內可出 <strong>${n}</strong> 題，
           題庫總覽為 ${s} 題。
