@@ -755,7 +755,9 @@ function renderHome() {
               .join("")}
           </div>
         </div>
-        <h1 class="home-title">${wrongCount > 25 ? "禎禎要複習" : "禎禎我最棒"}</h1>
+        <h1 class="home-title">${
+          wrongCount > 25 ? "禎禎要複習" : "禎禎我最棒"
+        }</h1>
         <p class="hero-copy">
           題目會依類別平均輪替出題。現在目前篩選範圍內可出 <strong>${total}</strong> 題，
           題庫總覽為 ${totalInCurrentView} 題。
@@ -925,13 +927,6 @@ function renderQuiz() {
   app.innerHTML = `
     <main class="shell ${state.returningHome ? "is-returning" : ""}">
       <section class="quiz-card">
-        <header class="quiz-topbar">
-          <div>
-            <p class="eyebrow">Question ${progress}</p>
-            <h1>手機答題模式</h1>
-          </div>
-          <div class="score-pill">${state.score} 分</div>
-        </header>
 
         <div class="progress-meta">
           <span>${progress} / ${total}</span>
@@ -1083,4 +1078,3 @@ app.addEventListener("click", (event) => {
 
 render();
 loadQuestions();
-
