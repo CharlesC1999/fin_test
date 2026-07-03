@@ -673,9 +673,9 @@ h2 {
   color: var(--primary-deep);
 }
 
+.exam-toggle,
 .mode-toggle {
   display: inline-grid;
-  grid-template-columns: repeat(3, 1fr);
   align-items: center;
   min-height: 38px;
   padding: 4px;
@@ -684,8 +684,16 @@ h2 {
   background: rgba(255, 250, 241, 0.96);
 }
 
+.exam-toggle {
+  grid-template-columns: repeat(2, minmax(54px, 1fr));
+}
+
+.mode-toggle {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.exam-toggle-btn,
 .mode-toggle-btn {
-  min-width: 36px;
   min-height: 30px;
   border: 0;
   border-radius: 999px;
@@ -699,10 +707,21 @@ h2 {
     transform 180ms ease;
 }
 
+.exam-toggle-btn {
+  min-width: 54px;
+  padding: 0 10px;
+}
+
+.mode-toggle-btn {
+  min-width: 36px;
+}
+
+.exam-toggle-btn:hover,
 .mode-toggle-btn:hover {
   color: var(--primary-deep);
 }
 
+.exam-toggle-btn.is-active,
 .mode-toggle-btn.is-active {
   background: #fde8d8;
   color: var(--primary-deep);

@@ -4,6 +4,26 @@ const DEFAULT_CATEGORY = "未分類";
 const ALL_CATEGORY = "全部";
 const WRONG_STORAGE_KEY = "quiz_wrong_questions";
 const PROGRESS_STORAGE_KEY = "quiz_progress";
+const ACTIVE_EXAM_STORAGE_KEY = "quiz_active_exam";
+
+const EXAM_SOURCES = [
+  {
+    key: "finance",
+    label: "法金題庫",
+    shortLabel: "法金",
+    file: "data_table.json",
+    categoryFallback: DEFAULT_CATEGORY,
+    answerBase: 0,
+  },
+  {
+    key: "esgf",
+    label: "ESGF 題庫",
+    shortLabel: "ESGF",
+    file: "data_table_esgf.json",
+    categoryFallback: DEFAULT_CATEGORY,
+    answerBase: 1,
+  },
+];
 
 const QUESTION_SELECTION_MODES = {
   all: {
@@ -21,6 +41,7 @@ const QUESTION_SELECTION_MODES = {
 };
 
 const state = {
+  activeExamKey: loadActiveExamKey(),
   allQuestions: [],
   questions: [],
   started: false,
@@ -56,25 +77,96 @@ function uniqueStringList(values) {
   ];
 }
 
-function normalizeQuestions(rawQuestions) {
-  return rawQuestions
+function loadActiveExamKey() {
+  try {
+    const saved = window.localStorage.getItem(ACTIVE_EXAM_STORAGE_KEY);
+    return EXAM_SOURCES.some((source) => source.key === saved)
+      ? saved
+      : EXAM_SOURCES[0].key;
+  } catch {
+    return EXAM_SOURCES[0].key;
+  }
+}
+
+function persistActiveExamKey() {
+  window.localStorage.setItem(ACTIVE_EXAM_STORAGE_KEY, state.activeExamKey);
+}
+
+function currentExamSource() {
+  return (
+    EXAM_SOURCES.find((source) => source.key === state.activeExamKey) ||
+    EXAM_SOURCES[0]
+  );
+}
+
+function scopedStorageKey(baseKey) {
+  return `${baseKey}_${state.activeExamKey}`;
+}
+
+function extractRawQuestions(rawData) {
+  if (Array.isArray(rawData)) {
+    return rawData;
+  }
+
+  if (
+    rawData &&
+    typeof rawData === "object" &&
+    rawData.sheets &&
+    typeof rawData.sheets === "object"
+  ) {
+    return Object.values(rawData.sheets).flatMap((sheet) =>
+      Array.isArray(sheet) ? sheet : []
+    );
+  }
+
+  return [];
+}
+
+function normalizeOptions(options) {
+  if (Array.isArray(options)) {
+    return options.map((option) => String(option).trim());
+  }
+
+  if (options && typeof options === "object") {
+    return Object.entries(options)
+      .sort(([left], [right]) => Number(left) - Number(right))
+      .map(([, option]) => String(option).trim());
+  }
+
+  return [];
+}
+
+function normalizeAnswer(answer, source) {
+  const rawAnswers = Array.isArray(answer) ? answer : [answer];
+  return rawAnswers
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value))
+    .map((value) => value - source.answerBase)
+    .sort((a, b) => a - b);
+}
+
+function normalizeQuestions(rawData, source = currentExamSource()) {
+  return extractRawQuestions(rawData)
     .filter((item) => {
       const hasQuestion =
         typeof item.question === "string" && item.question.trim();
-      const hasOptions = Array.isArray(item.options) && item.options.length > 1;
-      const hasAnswers = Array.isArray(item.answer) && item.answer.length > 0;
+      const hasOptions = normalizeOptions(item.options).length > 1;
+      const hasAnswers = normalizeAnswer(item.answer, source).length > 0;
       return hasQuestion && hasOptions && hasAnswers;
     })
     .map((item) => ({
       ...item,
-      id: String(item.id),
-      type: String(item.type || DEFAULT_CATEGORY).trim() || DEFAULT_CATEGORY,
+      id: String(item.id ?? item.no ?? item.row),
+      type:
+        String(item.type || source.categoryFallback || DEFAULT_CATEGORY).trim() ||
+        DEFAULT_CATEGORY,
       difficulty: String(item.difficulty || "未分類").trim() || "未分類",
       question: item.question.trim(),
-      options: item.options.map((option) => String(option).trim()),
-      answer: item.answer.map((value) => Number(value)).sort((a, b) => a - b),
+      options: normalizeOptions(item.options),
+      answer: normalizeAnswer(item.answer, source),
       answer_type:
-        item.answer_type || (item.answer.length > 1 ? "複選" : "單選"),
+        item.answer_type ||
+        (normalizeAnswer(item.answer, source).length > 1 ? "複選" : "單選"),
     }));
 }
 
@@ -221,7 +313,11 @@ function clearCategories() {
 
 function loadWrongQuestionIds() {
   try {
-    const saved = window.localStorage.getItem(WRONG_STORAGE_KEY);
+    const saved =
+      window.localStorage.getItem(scopedStorageKey(WRONG_STORAGE_KEY)) ||
+      (state.activeExamKey === "finance"
+        ? window.localStorage.getItem(WRONG_STORAGE_KEY)
+        : null);
     if (!saved) return [];
 
     const parsed = JSON.parse(saved);
@@ -233,7 +329,7 @@ function loadWrongQuestionIds() {
 
 function persistWrongQuestionIds() {
   window.localStorage.setItem(
-    WRONG_STORAGE_KEY,
+    scopedStorageKey(WRONG_STORAGE_KEY),
     JSON.stringify(state.wrongQuestionIds)
   );
 }
@@ -272,7 +368,11 @@ function normalizeProgress(progress) {
 
 function loadProgress() {
   try {
-    const saved = window.localStorage.getItem(PROGRESS_STORAGE_KEY);
+    const saved =
+      window.localStorage.getItem(scopedStorageKey(PROGRESS_STORAGE_KEY)) ||
+      (state.activeExamKey === "finance"
+        ? window.localStorage.getItem(PROGRESS_STORAGE_KEY)
+        : null);
     if (!saved) {
       return normalizeProgress({});
     }
@@ -285,7 +385,7 @@ function loadProgress() {
 
 function persistProgress() {
   window.localStorage.setItem(
-    PROGRESS_STORAGE_KEY,
+    scopedStorageKey(PROGRESS_STORAGE_KEY),
     JSON.stringify(state.progress)
   );
 }
@@ -315,6 +415,24 @@ function clearWrongQuestions() {
 function setPlayMode(mode) {
   state.playMode = mode;
   syncFilteredQuestions();
+}
+
+function setActiveExam(key) {
+  if (key === state.activeExamKey) return;
+  if (!EXAM_SOURCES.some((source) => source.key === key)) return;
+
+  state.activeExamKey = key;
+  persistActiveExamKey();
+  state.loading = true;
+  state.error = "";
+  state.allQuestions = [];
+  state.questions = [];
+  state.selectedCategories = [];
+  state.playMode = "all";
+  state.filterExpanded = true;
+  resetRunState();
+  render();
+  loadQuestions();
 }
 
 function setQuestionSelectionMode(mode) {
@@ -370,6 +488,10 @@ function selectedCategorySummary() {
 
 function modeLabel() {
   return state.playMode === "wrong" ? "歷史錯題" : "全部題庫";
+}
+
+function examLabel() {
+  return currentExamSource().label;
 }
 
 function selectionModeLabel() {
@@ -657,6 +779,18 @@ function renderHome() {
   const progressSummary = overallProgressSummary();
   const categoryTotals = categoryTotalsMap();
   const modeButtonLabel = `出題：${selectionModeLabel()}`;
+  const examSwitchMarkup = EXAM_SOURCES.map(
+    (source) => `
+      <button
+        class="exam-toggle-btn ${
+          state.activeExamKey === source.key ? "is-active" : ""
+        }"
+        data-action="set-exam"
+        data-exam-key="${source.key}"
+        aria-pressed="${state.activeExamKey === source.key ? "true" : "false"}"
+      >${escapeHtml(source.shortLabel)}</button>
+    `
+  ).join("");
 
   const filtersMarkup = `
     <label
@@ -708,6 +842,9 @@ function renderHome() {
       <section class="hero-card">
         <p class="eyebrow">Mobile Quiz Game</p>
         <div class="top-utility">
+          <div class="exam-toggle" role="group" aria-label="題庫切換">
+            ${examSwitchMarkup}
+          </div>
           <button
             class="btn btn-ghost btn-compact ${
               state.playMode === "wrong" ? "is-mode-active" : ""
@@ -759,7 +896,9 @@ function renderHome() {
           wrongCount > 25 ? "禎禎要複習" : "禎禎我最棒"
         }</h1>
         <p class="hero-copy">
-          題目會依類別平均輪替出題。現在目前篩選範圍內可出 <strong>${total}</strong> 題，
+          目前題庫為「${escapeHtml(
+            examLabel()
+          )}」。題目會依類別平均輪替出題。現在目前篩選範圍內可出 <strong>${total}</strong> 題，
           題庫總覽為 ${totalInCurrentView} 題。
         </p>
         <section class="filter-panel ${visibleClass}">
@@ -985,16 +1124,17 @@ function render() {
 
 async function loadQuestions() {
   try {
+    const source = currentExamSource();
     state.wrongQuestionIds = loadWrongQuestionIds();
     state.progress = loadProgress();
 
-    const response = await fetch(`${import.meta.env.BASE_URL}data_table.json`);
+    const response = await fetch(`${import.meta.env.BASE_URL}${source.file}`);
     if (!response.ok) {
       throw new Error(`題庫載入失敗（${response.status}）`);
     }
 
     const rawQuestions = await response.json();
-    state.allQuestions = normalizeQuestions(rawQuestions);
+    state.allQuestions = normalizeQuestions(rawQuestions, source);
     syncFilteredQuestions();
     state.error =
       state.questions.length === 0 ? "題庫內容為空，請確認 JSON 格式。" : "";
@@ -1046,6 +1186,8 @@ app.addEventListener("click", (event) => {
       clearWrongQuestions();
       render();
       restoreHomeScrollState(scrollState);
+    } else if (action === "set-exam") {
+      setActiveExam(actionTarget.dataset.examKey || EXAM_SOURCES[0].key);
     } else if (action === "set-question-mode") {
       const scrollState = captureHomeScrollState();
       setQuestionSelectionMode(
