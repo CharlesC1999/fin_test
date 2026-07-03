@@ -836,6 +836,7 @@ function renderHome() {
 
   const visibleClass = state.filterExpanded ? "is-expanded" : "is-collapsed";
   const toggleLabel = state.filterExpanded ? "收合分類" : "展開分類";
+  const compactCategoryClass = categories().length <= 1 ? "is-compact" : "";
 
   app.innerHTML = `
     <main class="shell">
@@ -901,7 +902,7 @@ function renderHome() {
           )}」。題目會依類別平均輪替出題。現在目前篩選範圍內可出 <strong>${total}</strong> 題，
           題庫總覽為 ${totalInCurrentView} 題。
         </p>
-        <section class="filter-panel ${visibleClass}">
+        <section class="filter-panel ${visibleClass} ${compactCategoryClass}">
           <div class="filter-head">
             <strong>題目分類</strong>
             <span>${escapeHtml(modeLabel())} · ${escapeHtml(

@@ -222,6 +222,14 @@ h2 {
   max-height: none;
 }
 
+.filter-panel.is-compact {
+  flex: 0 0 auto;
+}
+
+.filter-panel.is-compact .filter-list {
+  flex: 0 0 auto;
+}
+
 .btn-compact {
   min-height: 38px;
   padding: 0 14px;
