@@ -5,25 +5,49 @@ const ALL_CATEGORY = "全部";
 const WRONG_STORAGE_KEY = "quiz_wrong_questions";
 const PROGRESS_STORAGE_KEY = "quiz_progress";
 const ACTIVE_EXAM_STORAGE_KEY = "quiz_active_exam";
+const ACTIVE_BANK_STORAGE_KEY = "quiz_active_question_bank";
+const ALL_BANK = "all";
 
 const EXAM_SOURCES = [
   {
     key: "finance",
     label: "法金題庫",
     shortLabel: "法金",
-    file: "data_table.json",
     categoryFallback: DEFAULT_CATEGORY,
     answerBase: 0,
+    banks: [
+      {
+        key: "main",
+        label: "主題庫",
+        shortLabel: "主",
+        file: "data_table.json",
+      },
+    ],
   },
   {
     key: "esgf",
     label: "ESGF 題庫",
     shortLabel: "ESGF",
-    file: "data_table_esgf.json",
     categoryFallback: DEFAULT_CATEGORY,
     answerBase: 1,
+    banks: [
+      {
+        key: "esgf1",
+        label: "題庫一",
+        shortLabel: "一",
+        file: "data_table_esgf.json",
+      },
+      {
+        key: "esgf2",
+        label: "題庫二",
+        shortLabel: "二",
+        file: "data_table_esgf2.json",
+      },
+    ],
   },
 ];
+
+const INITIAL_ACTIVE_EXAM_KEY = loadActiveExamKey();
 
 const QUESTION_SELECTION_MODES = {
   all: {
@@ -41,7 +65,8 @@ const QUESTION_SELECTION_MODES = {
 };
 
 const state = {
-  activeExamKey: loadActiveExamKey(),
+  activeExamKey: INITIAL_ACTIVE_EXAM_KEY,
+  activeBankKey: loadActiveBankKey(INITIAL_ACTIVE_EXAM_KEY),
   allQuestions: [],
   questions: [],
   started: false,
@@ -88,14 +113,60 @@ function loadActiveExamKey() {
   }
 }
 
+function loadActiveBankKey(examKey) {
+  try {
+    const saved = window.localStorage.getItem(
+      `${ACTIVE_BANK_STORAGE_KEY}_${examKey}`
+    );
+    const source =
+      EXAM_SOURCES.find((item) => item.key === examKey) || EXAM_SOURCES[0];
+    const supportsMultipleBanks = source.banks.length > 1;
+    const allowedKeys = source.banks.map((bank) => bank.key);
+
+    if (supportsMultipleBanks && saved === ALL_BANK) {
+      return ALL_BANK;
+    }
+
+    return allowedKeys.includes(saved) ? saved : ALL_BANK;
+  } catch {
+    return ALL_BANK;
+  }
+}
+
 function persistActiveExamKey() {
   window.localStorage.setItem(ACTIVE_EXAM_STORAGE_KEY, state.activeExamKey);
+}
+
+function persistActiveBankKey() {
+  window.localStorage.setItem(
+    `${ACTIVE_BANK_STORAGE_KEY}_${state.activeExamKey}`,
+    state.activeBankKey
+  );
 }
 
 function currentExamSource() {
   return (
     EXAM_SOURCES.find((source) => source.key === state.activeExamKey) ||
     EXAM_SOURCES[0]
+  );
+}
+
+function currentExamBanks() {
+  return currentExamSource().banks;
+}
+
+function supportsBankSelection() {
+  return currentExamBanks().length > 1;
+}
+
+function selectedBankLabel() {
+  if (!supportsBankSelection() || state.activeBankKey === ALL_BANK) {
+    return "全部題庫";
+  }
+
+  return (
+    currentExamBanks().find((bank) => bank.key === state.activeBankKey)?.label ||
+    "全部題庫"
   );
 }
 
@@ -145,7 +216,7 @@ function normalizeAnswer(answer, source) {
     .sort((a, b) => a - b);
 }
 
-function normalizeQuestions(rawData, source = currentExamSource()) {
+function normalizeQuestions(rawData, source = currentExamSource(), bank) {
   return extractRawQuestions(rawData)
     .filter((item) => {
       const hasQuestion =
@@ -156,7 +227,12 @@ function normalizeQuestions(rawData, source = currentExamSource()) {
     })
     .map((item) => ({
       ...item,
-      id: String(item.id ?? item.no ?? item.row),
+      id:
+        source.banks.length > 1
+          ? `${bank.key}:${String(item.id ?? item.no ?? item.row)}`
+          : String(item.id ?? item.no ?? item.row),
+      bankKey: bank.key,
+      bankLabel: bank.label,
       type:
         String(item.type || source.categoryFallback || DEFAULT_CATEGORY).trim() ||
         DEFAULT_CATEGORY,
@@ -178,19 +254,36 @@ function questionCategory(question) {
   return question?.type || DEFAULT_CATEGORY;
 }
 
+function bankScopedQuestions() {
+  if (!supportsBankSelection() || state.activeBankKey === ALL_BANK) {
+    return [...state.allQuestions];
+  }
+
+  return state.allQuestions.filter(
+    (question) => question.bankKey === state.activeBankKey
+  );
+}
+
 function categories() {
   const items = new Set();
-  state.allQuestions.forEach((question) => {
+  bankScopedQuestions().forEach((question) => {
     items.add(questionCategory(question));
   });
   return [...items].sort((left, right) => left.localeCompare(right, "zh-Hant"));
 }
 
 function filteredQuestions() {
+  const bankFiltered =
+    supportsBankSelection() && state.activeBankKey !== ALL_BANK
+      ? state.allQuestions.filter(
+          (question) => question.bankKey === state.activeBankKey
+        )
+      : [...state.allQuestions];
+
   const categoryFiltered =
     state.selectedCategories.length === 0
-      ? [...state.allQuestions]
-      : state.allQuestions.filter((question) =>
+      ? bankFiltered
+      : bankFiltered.filter((question) =>
           state.selectedCategories.includes(questionCategory(question))
         );
 
@@ -422,6 +515,7 @@ function setActiveExam(key) {
   if (!EXAM_SOURCES.some((source) => source.key === key)) return;
 
   state.activeExamKey = key;
+  state.activeBankKey = loadActiveBankKey(key);
   persistActiveExamKey();
   state.loading = true;
   state.error = "";
@@ -433,6 +527,18 @@ function setActiveExam(key) {
   resetRunState();
   render();
   loadQuestions();
+}
+
+function setActiveBank(key) {
+  const allowedKeys = currentExamBanks().map((bank) => bank.key);
+  if (key !== ALL_BANK && !allowedKeys.includes(key)) return;
+  if (key === state.activeBankKey) return;
+
+  state.activeBankKey = key;
+  persistActiveBankKey();
+  state.selectedCategories = [];
+  state.playMode = "all";
+  syncFilteredQuestions();
 }
 
 function setQuestionSelectionMode(mode) {
@@ -725,7 +831,7 @@ function escapeHtml(value) {
 }
 
 function categoryTotalsMap() {
-  return state.allQuestions.reduce((totals, question) => {
+  return bankScopedQuestions().reduce((totals, question) => {
     const category = questionCategory(question);
     totals[category] = (totals[category] || 0) + 1;
     return totals;
@@ -735,8 +841,17 @@ function categoryTotalsMap() {
 function categoryProgress(category, totals) {
   const stats =
     state.progress.categoryStats[category] || emptyCategoryProgress();
-  const answeredCount = stats.answeredIds.length;
-  const correctCount = stats.correctIds.length;
+  const categoryQuestionIds = new Set(
+    bankScopedQuestions()
+      .filter((question) => questionCategory(question) === category)
+      .map((question) => question.id)
+  );
+  const answeredCount = stats.answeredIds.filter((id) =>
+    categoryQuestionIds.has(id)
+  ).length;
+  const correctCount = stats.correctIds.filter((id) =>
+    categoryQuestionIds.has(id)
+  ).length;
   const totalCount = totals[category] || 0;
 
   return {
@@ -754,8 +869,12 @@ function categoryProgress(category, totals) {
 }
 
 function overallProgressSummary() {
-  const answeredCount = state.progress.answeredQuestionIds.length;
-  const totalCount = state.allQuestions.length;
+  const scopedQuestions = bankScopedQuestions();
+  const scopedIds = new Set(scopedQuestions.map((question) => question.id));
+  const answeredCount = state.progress.answeredQuestionIds.filter((id) =>
+    scopedIds.has(id)
+  ).length;
+  const totalCount = scopedQuestions.length;
 
   return {
     answeredCount,
@@ -791,6 +910,34 @@ function renderHome() {
       >${escapeHtml(source.shortLabel)}</button>
     `
   ).join("");
+  const bankSwitchMarkup = supportsBankSelection()
+    ? `
+      <div class="bank-toggle" role="group" aria-label="ESGF 題庫範圍">
+        <button
+          class="bank-toggle-btn ${state.activeBankKey === ALL_BANK ? "is-active" : ""}"
+          data-action="set-bank"
+          data-bank-key="${ALL_BANK}"
+          aria-pressed="${state.activeBankKey === ALL_BANK ? "true" : "false"}"
+        >全部</button>
+        ${currentExamBanks()
+          .map(
+            (bank) => `
+              <button
+                class="bank-toggle-btn ${
+                  state.activeBankKey === bank.key ? "is-active" : ""
+                }"
+                data-action="set-bank"
+                data-bank-key="${bank.key}"
+                aria-pressed="${
+                  state.activeBankKey === bank.key ? "true" : "false"
+                }"
+              >${escapeHtml(bank.label)}</button>
+            `
+          )
+          .join("")}
+      </div>
+    `
+    : "";
 
   const filtersMarkup = `
     <label
@@ -846,6 +993,7 @@ function renderHome() {
           <div class="exam-toggle" role="group" aria-label="題庫切換">
             ${examSwitchMarkup}
           </div>
+          ${bankSwitchMarkup}
           <button
             class="btn btn-ghost btn-compact ${
               state.playMode === "wrong" ? "is-mode-active" : ""
@@ -899,6 +1047,8 @@ function renderHome() {
         <p class="hero-copy">
           目前題庫為「${escapeHtml(
             examLabel()
+          )} · ${escapeHtml(
+            selectedBankLabel()
           )}」。題目會依類別平均輪替出題。現在目前篩選範圍內可出 <strong>${total}</strong> 題，
           題庫總覽為 ${totalInCurrentView} 題。
         </p>
@@ -1078,6 +1228,11 @@ function renderQuiz() {
 
         <article class="question-panel">
           <div class="question-tags">
+            ${
+              supportsBankSelection()
+                ? `<span>${escapeHtml(question.bankLabel)}</span>`
+                : ""
+            }
             <span>${escapeHtml(questionCategory(question))}</span>
             <span>${escapeHtml(question.difficulty || "未分類")}</span>
           </div>
@@ -1129,13 +1284,19 @@ async function loadQuestions() {
     state.wrongQuestionIds = loadWrongQuestionIds();
     state.progress = loadProgress();
 
-    const response = await fetch(`${import.meta.env.BASE_URL}${source.file}`);
-    if (!response.ok) {
-      throw new Error(`題庫載入失敗（${response.status}）`);
-    }
+    const bankQuestions = await Promise.all(
+      source.banks.map(async (bank) => {
+        const response = await fetch(`${import.meta.env.BASE_URL}${bank.file}`);
+        if (!response.ok) {
+          throw new Error(`${bank.label}載入失敗（${response.status}）`);
+        }
 
-    const rawQuestions = await response.json();
-    state.allQuestions = normalizeQuestions(rawQuestions, source);
+        const rawQuestions = await response.json();
+        return normalizeQuestions(rawQuestions, source, bank);
+      })
+    );
+
+    state.allQuestions = bankQuestions.flat();
     syncFilteredQuestions();
     state.error =
       state.questions.length === 0 ? "題庫內容為空，請確認 JSON 格式。" : "";
@@ -1189,6 +1350,11 @@ app.addEventListener("click", (event) => {
       restoreHomeScrollState(scrollState);
     } else if (action === "set-exam") {
       setActiveExam(actionTarget.dataset.examKey || EXAM_SOURCES[0].key);
+    } else if (action === "set-bank") {
+      const scrollState = captureHomeScrollState();
+      setActiveBank(actionTarget.dataset.bankKey || ALL_BANK);
+      render();
+      restoreHomeScrollState(scrollState);
     } else if (action === "set-question-mode") {
       const scrollState = captureHomeScrollState();
       setQuestionSelectionMode(

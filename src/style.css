@@ -682,6 +682,7 @@ h2 {
 }
 
 .exam-toggle,
+.bank-toggle,
 .mode-toggle {
   display: inline-grid;
   align-items: center;
@@ -696,11 +697,16 @@ h2 {
   grid-template-columns: repeat(2, minmax(54px, 1fr));
 }
 
+.bank-toggle {
+  grid-template-columns: repeat(3, minmax(62px, 1fr));
+}
+
 .mode-toggle {
   grid-template-columns: repeat(3, 1fr);
 }
 
 .exam-toggle-btn,
+.bank-toggle-btn,
 .mode-toggle-btn {
   min-height: 30px;
   border: 0;
@@ -720,16 +726,23 @@ h2 {
   padding: 0 10px;
 }
 
+.bank-toggle-btn {
+  min-width: 62px;
+  padding: 0 10px;
+}
+
 .mode-toggle-btn {
   min-width: 36px;
 }
 
 .exam-toggle-btn:hover,
+.bank-toggle-btn:hover,
 .mode-toggle-btn:hover {
   color: var(--primary-deep);
 }
 
 .exam-toggle-btn.is-active,
+.bank-toggle-btn.is-active,
 .mode-toggle-btn.is-active {
   background: #fde8d8;
   color: var(--primary-deep);
